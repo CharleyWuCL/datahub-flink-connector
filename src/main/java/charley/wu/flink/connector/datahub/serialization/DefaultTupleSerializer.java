@@ -15,10 +15,10 @@
 
 package charley.wu.flink.connector.datahub.serialization;
 
+import charley.wu.flink.connector.datahub.serialization.basic.DataHubSerializer;
 import com.aliyun.datahub.client.model.RecordEntry;
 import com.aliyun.datahub.client.model.RecordSchema;
 import com.aliyun.datahub.client.model.TupleRecordData;
-import charley.wu.flink.connector.datahub.serialization.basic.DataHubSerializer;
 import java.util.Map;
 
 public class DefaultTupleSerializer implements DataHubSerializer<Map<String, Object>> {

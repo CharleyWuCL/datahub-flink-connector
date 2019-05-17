@@ -8,13 +8,16 @@ import charley.wu.flink.connector.datahub.selector.ShardSelector;
 import charley.wu.flink.connector.datahub.serialization.basic.DataHubSerializer;
 import com.aliyun.datahub.client.DatahubClient;
 import com.aliyun.datahub.client.exception.LimitExceededException;
+import com.aliyun.datahub.client.model.ListShardResult;
 import com.aliyun.datahub.client.model.RecordEntry;
+import com.aliyun.datahub.client.model.ShardEntry;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.stream.Collectors;
 import org.apache.commons.lang3.Validate;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
@@ -72,6 +75,12 @@ public class DataHubSink<IN> extends RichSinkFunction<IN> implements Checkpointe
     Validate.notNull(this.sinkTopic, "DataHub Topic can not be null");
 
     this.client = new DataHubClientFactory(this.config).create();
+    ListShardResult shardResult = this.client.listShard(sinkProject, sinkTopic);
+    List<String> shardIds = shardResult.getShards().stream().map(ShardEntry::getShardId)
+        .collect(Collectors.toList());
+    Validate.notEmpty(shardIds, "DataHub Shard Number can not be empty");
+    this.selector.setShardList(shardIds);
+
     this.batchMap = new HashMap<>();
 
     if (batchFlushOnCheckpoint && !((StreamingRuntimeContext) getRuntimeContext())
