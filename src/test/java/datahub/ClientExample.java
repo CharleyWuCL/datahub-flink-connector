@@ -49,7 +49,7 @@ public class ClientExample {
     String cursor = datahubClient.getCursor(projectName, topicName, shardId, CursorType.LATEST)
         .getCursor();
 
-    while (true){
+    while (true) {
       try {
         // 读取数据
         GetRecordsResult result = datahubClient
@@ -60,12 +60,12 @@ public class ClientExample {
           for (RecordEntry entry : result.getRecords()) {
             BlobRecordData data = (BlobRecordData) entry.getRecordData();
             HeartBeat hb = JsonUtil.toObject(data.getData(), HeartBeat.class);
-            if(Strings.isNullOrEmpty(hb.getCabinetMac())){
+            if (Strings.isNullOrEmpty(hb.getCabinetMac())) {
               System.out.println("value:" + new String(data.getData(), Charsets.UTF_8));
             }
           }
         }
-      }catch (Exception e){
+      } catch (Exception e) {
         e.printStackTrace();
       }
     }

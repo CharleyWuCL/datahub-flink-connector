@@ -20,17 +20,16 @@ import charley.wu.flink.connector.datahub.client.DataHubClientFactory;
 import charley.wu.flink.connector.datahub.config.DataHubConfig;
 import charley.wu.flink.connector.datahub.serialization.basic.DataHubDeserializer;
 import com.aliyun.datahub.client.DatahubClient;
-import com.aliyun.datahub.client.exception.SeekOutOfRangeException;
+import com.aliyun.datahub.client.exception.DatahubClientException;
+import com.aliyun.datahub.client.exception.SubscriptionOfflineException;
 import com.aliyun.datahub.client.model.CursorType;
 import com.aliyun.datahub.client.model.GetRecordsResult;
 import com.aliyun.datahub.client.model.RecordEntry;
 import com.aliyun.datahub.client.model.RecordSchema;
 import com.aliyun.datahub.client.model.ShardEntry;
 import com.aliyun.datahub.client.model.SubscriptionOffset;
-import com.aliyun.datahub.exception.DatahubClientException;
 import com.aliyun.datahub.exception.OffsetResetedException;
 import com.aliyun.datahub.exception.OffsetSessionChangedException;
-import com.aliyun.datahub.exception.SubscriptionOfflineException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -82,7 +81,7 @@ public class DataHubSource<OUT> extends RichParallelSourceFunction<OUT>
   private String topic;
   private String subId;
 
-  private static final String OFFSETS_STATE_NAME = "topic-partition-offset-states";
+  private static final String CURSORS_STATE_NAME = "topic-shard-cursor-states";
 
   private transient volatile boolean restored;
 
@@ -94,44 +93,49 @@ public class DataHubSource<OUT> extends RichParallelSourceFunction<OUT>
 
   @Override
   public void open(Configuration parameters) throws Exception {
-    Validate.notEmpty(this.props, "DataHub props can not be empty");
-    Validate.notNull(this.deserializer, "DataHubDeserializer can not be null");
+    try {
+      Validate.notEmpty(this.props, "DataHub props can not be empty");
+      Validate.notNull(this.deserializer, "DataHubDeserializer can not be null");
 
-    this.project = props.getProperty(DataHubConfig.SOURCE_PROJECT_KEY);
-    this.topic = props.getProperty(DataHubConfig.SOURCE_TOPIC_KEY);
-    this.subId = props.getProperty(DataHubConfig.SOURCE_SUBID_KEY);
+      this.project = props.getProperty(DataHubConfig.SOURCE_PROJECT_KEY);
+      this.topic = props.getProperty(DataHubConfig.SOURCE_TOPIC_KEY);
+      this.subId = props.getProperty(DataHubConfig.SOURCE_SUBID_KEY);
 
-    Validate.notNull(this.project, "DataHub Project can not be null");
-    Validate.notNull(this.topic, "DataHub Topic can not be null");
-    Validate.notNull(this.subId, "DataHub SubId can not be null");
+      Validate.notNull(this.project, "DataHub Project can not be null");
+      Validate.notNull(this.topic, "DataHub Topic can not be null");
+      Validate.notNull(this.subId, "DataHub SubId can not be null");
 
-    this.client = new DataHubClientFactory(this.config).create();
+      this.client = new DataHubClientFactory(this.config).create();
 
-    // Step1. 获取shard信息
-    List<ShardEntry> shards = client.listShard(project, topic).getShards();
-    if (shards == null || shards.size() == 0) {
-      throw new Exception("No shard of " + project + "." + topic);
+      // Step1. 获取shard信息
+      List<ShardEntry> shards = client.listShard(project, topic).getShards();
+      if (shards == null || shards.size() == 0) {
+        throw new Exception("No shard of " + project + "." + topic);
+      }
+      List<String> shardIds = shards.stream().map(ShardEntry::getShardId)
+          .collect(Collectors.toList());
+
+      // 1. 如果使用点位服务，首先需要openSubscriptionSession获取订阅的sessionId和versionId信息，
+      //    OpenSession只需初始化一次
+      // Step2. 获取Offset Map
+      Map<String, SubscriptionOffset> offsets = client
+          .openSubscriptionSession(project, topic, subId, shardIds).getOffsets();
+      readService = new AsyncReadService(offsets);
+      runningChecker = new RunningChecker();
+
+      if (cursorTable == null) {
+        cursorTable = new ConcurrentHashMap<>();
+      }
+      if (restoredCursors == null) {
+        restoredCursors = new ConcurrentHashMap<>();
+      }
+
+      // 3. 读取并保存点位，这里以读取BLOB数据为例，并且每1000条记录保存一次点位
+      schema = client.getTopic(project, topic).getRecordSchema();
+    } catch (Exception e) {
+      LOG.error("Open datahub source error.", e);
+      throw e;
     }
-    List<String> shardIds = shards.stream().map(ShardEntry::getShardId)
-        .collect(Collectors.toList());
-
-    // 1. 如果使用点位服务，首先需要openSubscriptionSession获取订阅的sessionId和versionId信息，
-    //    OpenSession只需初始化一次
-    // Step2. 获取Offset Map
-    Map<String, SubscriptionOffset> offsets = client
-        .openSubscriptionSession(project, topic, subId, shardIds).getOffsets();
-    readService = new AsyncReadService(client, offsets);
-    runningChecker = new RunningChecker();
-
-    if (cursorTable == null) {
-      cursorTable = new ConcurrentHashMap<>();
-    }
-    if (restoredCursors == null) {
-      restoredCursors = new ConcurrentHashMap<>();
-    }
-
-    // 3. 读取并保存点位，这里以读取BLOB数据为例，并且每1000条记录保存一次点位
-    schema = client.getTopic(project, topic).getRecordSchema();
   }
 
 
@@ -144,7 +148,7 @@ public class DataHubSource<OUT> extends RichParallelSourceFunction<OUT>
 
     int delayWhenMessageNotFound = 100;
 
-    int threadNum = 1;
+    int threadNum = 10;
     int pullBatchSize = 10;
 
     readService.setThreadNum(threadNum);
@@ -156,7 +160,7 @@ public class DataHubSource<OUT> extends RichParallelSourceFunction<OUT>
         String cursor = getShardCursor(shardId, offset);
 
         // Step2. 消费消息
-        boolean found = false;
+        boolean found;
         GetRecordsResult recordsResult = client
             .getRecords(project, topic, shardId, schema, cursor, pullBatchSize);
         if (recordsResult.getRecordCount() > 0) {
@@ -177,6 +181,8 @@ public class DataHubSource<OUT> extends RichParallelSourceFunction<OUT>
             offset.setTimestamp(record.getSystemTime());
           }
           found = true;
+        } else {
+          found = false;
         }
 
         synchronized (lock) {
@@ -203,10 +209,7 @@ public class DataHubSource<OUT> extends RichParallelSourceFunction<OUT>
         offset = client
             .getSubscriptionOffset(project, topic, subId, Collections.singletonList(shardId))
             .getOffsets().get(shardId);
-        long nextSequence = offset.getSequence() + 1;
-        String cursor = client
-            .getCursor(project, topic, shardId, CursorType.SEQUENCE, nextSequence)
-            .getCursor();
+        String cursor = getCursorAtFirstTime(shardId, offset);
 
         synchronized (lock) {
           putShardCursor(shardId, cursor, offset);
@@ -249,18 +252,20 @@ public class DataHubSource<OUT> extends RichParallelSourceFunction<OUT>
   }
 
   private String getCursorAtFirstTime(String shardId, SubscriptionOffset offset) {
-    String cursor;
-    if (offset.getSequence() >= 0) {
-      try {
+    String cursor = null;
+    try {
+      if (offset.getSequence() >= 0) {
         // 获取下一条记录的Cursor
         long nextSequence = offset.getSequence() + 1;
         // 备注：如果按照SEQUENCE getCursor报SeekOutOfRange错误，需要回退到按照SYSTEM_TIME或者OLDEST/LATEST进行getCursor
         cursor = getCursor(shardId, CursorType.SEQUENCE, nextSequence);
-      } catch (SeekOutOfRangeException e) {
-        LOG.warn("Seek out of range, change cursor type to OLDEST");
-        cursor = getCursor(shardId, CursorType.OLDEST);
       }
-    } else {
+    } catch (Exception e) {
+      LOG.warn("Seek out of range, change cursor type to OLDEST");
+      cursor = getCursor(shardId, CursorType.OLDEST);
+    }
+
+    if (cursor == null) {
       // 获取最旧数据的Cursor
       cursor = getCursor(shardId, CursorType.OLDEST);
     }
@@ -284,14 +289,21 @@ public class DataHubSource<OUT> extends RichParallelSourceFunction<OUT>
   @Override
   public void cancel() {
     LOG.debug("cancel ...");
-    runningChecker.setRunning(false);
+    if (runningChecker != null) {
+      runningChecker.setRunning(false);
+    }
 
     if (readService != null) {
       readService.shutdown();
     }
 
-    cursorTable.clear();
-    restoredCursors.clear();
+    if (cursorTable != null) {
+      cursorTable.clear();
+    }
+
+    if (restoredCursors != null) {
+      restoredCursors.clear();
+    }
   }
 
   @Override
@@ -341,7 +353,7 @@ public class DataHubSource<OUT> extends RichParallelSourceFunction<OUT>
 
     this.unionCursorStates = context.getOperatorStateStore()
         .getUnionListState(new ListStateDescriptor<>(
-            OFFSETS_STATE_NAME, TypeInformation.of(new TypeHint<Tuple2<String, String>>() {
+            CURSORS_STATE_NAME, TypeInformation.of(new TypeHint<Tuple2<String, String>>() {
         })));
 
     this.restored = context.isRestored();

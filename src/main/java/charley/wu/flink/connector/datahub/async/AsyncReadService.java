@@ -1,7 +1,6 @@
 package charley.wu.flink.connector.datahub.async;
 
 import charley.wu.flink.connector.datahub.exception.DataHubException;
-import com.aliyun.datahub.client.DatahubClient;
 import com.aliyun.datahub.client.model.SubscriptionOffset;
 import java.util.Iterator;
 import java.util.Map;
@@ -21,23 +20,19 @@ public class AsyncReadService {
 
   private static final Logger LOG = LoggerFactory.getLogger(AsyncReadService.class);
 
-  private int threadNum = 20;
+  private int threadNum = 10;
 
-  private final DatahubClient client;
   private final Map<String, SubscriptionOffset> offsets;
   private ExecutorService threadPool;
   private ReadCallback callback;
 
-  public AsyncReadService(DatahubClient client, Map<String, SubscriptionOffset> offsets) {
-    this.client = client;
+  public AsyncReadService(Map<String, SubscriptionOffset> offsets) {
     this.offsets = offsets;
   }
 
   public void start() throws DataHubException {
-    this.threadPool = Executors
-        .newFixedThreadPool(this.threadNum, new DataHubThreadFactory("DataHubReadThread"));
+    this.threadPool = Executors.newFixedThreadPool(this.threadNum);
     putTask();
-    this.threadPool.shutdown();
     LOG.info("DataHub AsyncReadService start OK.");
   }
 
@@ -55,7 +50,7 @@ public class AsyncReadService {
       SubscriptionOffset offset = next.getValue();
       ReadContext context = new ReadContext(shardId, offset);
       ReadTask task = new ReadTask(context);
-      this.threadPool.submit(task);
+      this.threadPool.execute(task);
     }
   }
 
@@ -82,7 +77,7 @@ public class AsyncReadService {
 
     @Override
     public void run() {
-      if (!this.isCancelled()) {
+      while (!this.isCancelled()) {
         if (callback != null) {
           try {
             callback.execute(context);
@@ -94,9 +89,8 @@ public class AsyncReadService {
           LOG.error("Read Task Callback not set.");
           cancelled = true;
         }
-      } else {
-        LOG.warn("The Read Task is cancelled, {}", context.getShardId());
       }
+      LOG.warn("The Read Task is cancelled, {}", context.getShardId());
     }
 
     public boolean isCancelled() {

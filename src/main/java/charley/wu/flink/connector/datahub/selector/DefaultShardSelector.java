@@ -1,5 +1,7 @@
 package charley.wu.flink.connector.datahub.selector;
 
+import java.util.List;
+
 /**
  * Default shard selector.
  *
@@ -7,6 +9,10 @@ package charley.wu.flink.connector.datahub.selector;
  * @since 2019/4/30
  */
 public class DefaultShardSelector<T> implements ShardSelector<T> {
+
+  @Override
+  public void setShardList(List<String> shards) {
+  }
 
   @Override
   public String getShard(T value) {
