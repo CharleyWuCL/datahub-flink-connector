@@ -1,13 +1,13 @@
 package charley.wu.flink.datahub;
 
 import charley.wu.flink.datahub.client.DataHubClientFactory;
-import charley.wu.flink.datahub.config.DataHubConfig;
+import charley.wu.flink.datahub.config.DHConfig;
 import charley.wu.flink.datahub.retry.RetryForever;
 import charley.wu.flink.datahub.retry.RetryLoop;
 import charley.wu.flink.datahub.selector.ShardSelector;
 import charley.wu.flink.datahub.serialization.basic.DataHubSerializer;
 import com.aliyun.datahub.client.DatahubClient;
-import com.aliyun.datahub.client.exception.LimitExceededException;
+import com.aliyun.datahub.client.exception.DatahubClientException;
 import com.aliyun.datahub.client.model.ListShardResult;
 import com.aliyun.datahub.client.model.RecordEntry;
 import com.aliyun.datahub.client.model.ShardEntry;
@@ -20,6 +20,8 @@ import java.util.Properties;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.Validate;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.metrics.Counter;
+import org.apache.flink.runtime.metrics.groups.OperatorMetricGroup;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
@@ -40,7 +42,8 @@ public class DataHubSink<IN> extends RichSinkFunction<IN> implements Checkpointe
   private static final Logger LOG = LoggerFactory.getLogger(DataHubSink.class);
 
   private Properties properties;
-  private DataHubConfig config;
+  private DHConfig config;
+  private DataHubClientFactory factory;
   private DatahubClient client;
 
   private DataHubSerializer<IN> serializer;
@@ -54,10 +57,12 @@ public class DataHubSink<IN> extends RichSinkFunction<IN> implements Checkpointe
   private String sinkProject;
   private String sinkTopic;
 
+  private Counter counter;
+
   public DataHubSink(Properties props, DataHubSerializer<IN> serializer,
       ShardSelector<IN> selector) {
     this.properties = props;
-    this.config = new DataHubConfig(props);
+    this.config = new DHConfig(props);
     this.serializer = serializer;
     this.selector = selector;
 
@@ -74,7 +79,8 @@ public class DataHubSink<IN> extends RichSinkFunction<IN> implements Checkpointe
     Validate.notNull(this.sinkProject, "DataHub Project can not be null");
     Validate.notNull(this.sinkTopic, "DataHub Topic can not be null");
 
-    this.client = new DataHubClientFactory(this.config).create();
+    this.factory = new DataHubClientFactory(this.config);
+    this.client = factory.create();
     ListShardResult shardResult = this.client.listShard(sinkProject, sinkTopic);
     Validate.notNull(shardResult, "DataHub ListShardResult can not be null");
     List<String> shardIds = shardResult.getShards().stream().map(ShardEntry::getShardId)
@@ -90,6 +96,9 @@ public class DataHubSink<IN> extends RichSinkFunction<IN> implements Checkpointe
           "Flushing on checkpoint is enabled, but checkpointing is not enabled. Disabling flushing.");
       batchFlushOnCheckpoint = false;
     }
+
+    this.counter = ((OperatorMetricGroup) getRuntimeContext().getMetricGroup()).getIOMetricGroup()
+        .getNumRecordsOutCounter();
   }
 
   @Override
@@ -109,6 +118,8 @@ public class DataHubSink<IN> extends RichSinkFunction<IN> implements Checkpointe
     } else {
       putRecord(shardId, Collections.singletonList(record));
     }
+
+    counter.inc();
   }
 
   private List<RecordEntry> getBatchList(String shardId) {
@@ -148,13 +159,22 @@ public class DataHubSink<IN> extends RichSinkFunction<IN> implements Checkpointe
   }
 
   private void putRecord(String shardId, List<RecordEntry> batchList) {
+    try {
+      putRecordWithRetry(shardId, batchList);
+    } catch (DatahubClientException e) {
+      client = null;
+      client = factory.create();
+    }
+  }
+
+  private void putRecordWithRetry(String shardId, List<RecordEntry> batchList)
+      throws DatahubClientException {
     RetryLoop retryLoop = new RetryLoop(new RetryForever(5));
     while (retryLoop.shouldContinue()) {
       try {
         client.putRecordsByShard(sinkProject, sinkTopic, shardId, batchList);
         retryLoop.markComplete();
-      } catch (LimitExceededException e) {
-        LOG.info("LimitExceeded error, Retry forever.");
+      } catch (DatahubClientException e) {
         retryLoop.takeRuntimeException(e);
       }
     }

@@ -6,7 +6,7 @@ package charley.wu.flink.datahub.config;
  * @author Charley Wu
  * @since 2019/4/15
  */
-public class ConfigException extends Exception {
+public class ConfigException extends RuntimeException {
 
   public ConfigException(String message) {
     super(message);

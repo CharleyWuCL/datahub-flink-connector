@@ -15,9 +15,13 @@
 
 package charley.wu.flink.datahub.utils;
 
+import java.io.IOException;
 import java.util.Properties;
+import org.apache.flink.api.java.utils.ParameterTool;
 
-public final class ConfigUtils {
+public final class ConfigUtil {
+
+  private static final String CONFIG_FILE = "configFile";
 
   public static int getInteger(Properties props, String key, int defaultValue) {
     return Integer.parseInt(props.getProperty(key, String.valueOf(defaultValue)));
@@ -29,5 +33,22 @@ public final class ConfigUtils {
 
   public static boolean getBoolean(Properties props, String key, boolean defaultValue) {
     return Boolean.parseBoolean(props.getProperty(key, String.valueOf(defaultValue)));
+  }
+
+  public static Properties getCustomParams(ParameterTool args) throws IOException {
+    ParameterTool tool = ParameterTool.fromPropertiesFile(args.get(CONFIG_FILE));
+    return tool.getProperties();
+  }
+
+  public static Properties getWithPrefix(String prefix, Properties props) {
+    Properties newProps = new Properties();
+    for (Object keyObj : props.keySet()) {
+      String key = (String) keyObj;
+      if (key.startsWith(prefix)) {
+        String newKey = key.substring(prefix.length());
+        newProps.setProperty(newKey, props.getProperty(key));
+      }
+    }
+    return newProps;
   }
 }

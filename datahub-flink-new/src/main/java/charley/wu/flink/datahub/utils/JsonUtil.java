@@ -23,6 +23,10 @@ public class JsonUtil {
     return mapper.writeValueAsBytes(object);
   }
 
+  public static String toJson(Object obj) throws Exception {
+    return mapper.writeValueAsString(obj);
+  }
+
   public static <T> T toObject(byte[] value, Class<T> clazz) throws Exception {
     return mapper.readValue(value, clazz);
   }

@@ -25,4 +25,5 @@ public interface DataHubDeserializer<T> extends ResultTypeQueryable<T>, Serializ
   Map<String, String> deserializeKeys(RecordEntry record);
 
   T deserializeValue(RecordEntry record);
+
 }

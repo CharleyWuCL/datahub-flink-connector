@@ -1,26 +1,27 @@
 package charley.wu.flink.datahub.client;
 
-import charley.wu.flink.datahub.config.DataHubConfig;
+
+import charley.wu.flink.datahub.config.DHConfig;
 import com.aliyun.datahub.client.DatahubClient;
 import com.aliyun.datahub.client.DatahubClientBuilder;
 import com.aliyun.datahub.client.common.DatahubConfig;
 import com.aliyun.datahub.client.http.HttpConfig;
 
 /**
- * DataHub Client Factory.
+ * Desc...
  *
  * @author Charley Wu
- * @since 2019/5/5
+ * @since 2019/7/11
  */
 public class DataHubClientFactory {
 
-  private DataHubConfig config;
+  private DHConfig config;
 
-  public DataHubClientFactory(DataHubConfig config) {
+  public DataHubClientFactory(DHConfig config) {
     this.config = config;
   }
 
-  public DatahubClient create() throws Exception {
+  public DatahubClient create() {
     DatahubConfig datahubConfig = config.buildDatahubConfig();
     HttpConfig httpConfig = config.buildHttpConfig();
     return DatahubClientBuilder.newBuilder()

@@ -1,11 +1,13 @@
 package charley.wu.flink.datahub.config;
 
-import charley.wu.flink.datahub.utils.ConfigUtils;
+
+import charley.wu.flink.datahub.coordinate.config.ConsumerConfig;
+import charley.wu.flink.datahub.coordinate.config.ProducerConfig;
+import charley.wu.flink.datahub.utils.ConfigUtil;
 import com.aliyun.datahub.client.auth.AliyunAccount;
 import com.aliyun.datahub.client.common.DatahubConfig;
 import com.aliyun.datahub.client.http.HttpConfig;
 import com.aliyun.datahub.client.http.HttpConfig.CompressType;
-import com.typesafe.config.ConfigUtil;
 import java.io.Serializable;
 import java.util.Properties;
 import org.apache.flink.shaded.guava18.com.google.common.base.Strings;
@@ -16,7 +18,7 @@ import org.apache.flink.shaded.guava18.com.google.common.base.Strings;
  * @author Charley Wu
  * @since 2019/4/30
  */
-public class DataHubConfig implements Serializable {
+public class DHConfig implements Serializable {
 
   private static final long serialVersionUID = 1L;
 
@@ -28,8 +30,6 @@ public class DataHubConfig implements Serializable {
 
   public static final String READ_TIMEOUT = "datahub.http.readTimeout";  // Socket读写超时时间，默认10s
   public static final String CONN_TIMEOUT = "datahub.http.connTimeout";  // TCP连接超时时间，默认10s
-  public static final String MAX_CONN_PER_ROUTE = "datahub.http.maxConnPerRoute";  // 同一个Endpoint最大连接数，默认10
-  public static final String MAX_CONN_TOTAL = "datahub.http.maxConnTotal"; // Client最大连接数，默认10
   public static final String MAX_RETRY_COUNT = "datahub.http.maxRetryCount"; // 请求失败重试，默认1，不建议修改，重试由上层业务层处理
   public static final String DEBUG_REQUEST = "datahub.http.debugRequest";  // 是否打印请求日志信息，默认false
   public static final String COMPRESS_TYPE = "datahub.http.compressType";  // 数据传输压缩方式，默认不压缩，支持lz4， deflate压缩
@@ -40,9 +40,14 @@ public class DataHubConfig implements Serializable {
   public static final String DEFAULT_PROJECT = "datahub.default.project";  // 默认Project名
   public static final String SOURCE_PROJECT = "datahub.source.project";  // Datahub作为数据源的Project
   public static final String SOURCE_TOPIC = "datahub.source.topic";  // Datahub作为数据源的Topic
-  public static final String SOURCE_SUBID = "datahub.source.subid";  // Datahub作为数据源的SubId
+  public static final String SOURCE_SUBID = "datahub.source.subId";  // Datahub作为数据源的SubId
   public static final String SINK_PROJECT = "datahub.sink.project";  // Datahub作为输出仓库的Project
   public static final String SINK_TOPIC = "datahub.sink.topic";  // Datahub作为输出仓库的Topic
+
+  public static final String SOURCE_RATE = "datahub.source.rate";  // 消费速率
+  public static final int DEFAULT_SOURCE_RATE = 5000;  // 默认消费速率
+  public static final String SINK_RATE = "datahub.sink.rate";  // 生产速率
+  public static final int DEFAULT_SINK_RATE = 2000;  // 默认生产速率
 
   private Properties prop;
 
@@ -51,8 +56,9 @@ public class DataHubConfig implements Serializable {
   private String sinkProject;
   private String sourceTopic;
   private String sinkTopic;
+  private String subId;
 
-  public DataHubConfig(Properties properties) {
+  public DHConfig(Properties properties) {
     this.prop = properties;
 
     this.defaultProject = properties.getProperty(DEFAULT_PROJECT);
@@ -73,6 +79,8 @@ public class DataHubConfig implements Serializable {
 
     this.sourceTopic = this.prop.getProperty(SOURCE_TOPIC);
     this.sinkTopic = this.prop.getProperty(SINK_TOPIC);
+
+    this.subId = this.prop.getProperty(SOURCE_SUBID);
   }
 
   public DatahubConfig buildDatahubConfig() throws ConfigException {
@@ -91,7 +99,7 @@ public class DataHubConfig implements Serializable {
       throw new ConfigException("AccessKey can not be null.");
     }
 
-    boolean enableBinary = ConfigUtils.getBoolean(prop, ENABLE_BINARY, DEFAULT_ENABLE_BINARY);
+    boolean enableBinary = ConfigUtil.getBoolean(prop, ENABLE_BINARY, DEFAULT_ENABLE_BINARY);
 
     AliyunAccount account = new AliyunAccount(accessId, accessKey);
     return new DatahubConfig(endpoint, account, enableBinary);
@@ -108,16 +116,6 @@ public class DataHubConfig implements Serializable {
     String connTimeout = prop.getProperty(CONN_TIMEOUT);
     if (!Strings.isNullOrEmpty(connTimeout)) {
       config.setConnTimeout(Integer.parseInt(connTimeout));
-    }
-
-    String maxConnPerRoute = prop.getProperty(MAX_CONN_PER_ROUTE);
-    if (!Strings.isNullOrEmpty(maxConnPerRoute)) {
-      config.setMaxConnPerRoute(Integer.parseInt(maxConnPerRoute));
-    }
-
-    String maxConnTotal = prop.getProperty(MAX_CONN_TOTAL);
-    if (!Strings.isNullOrEmpty(maxConnTotal)) {
-      config.setMaxConnTotal(Integer.parseInt(maxConnTotal));
     }
 
     String maxRetryCount = prop.getProperty(MAX_RETRY_COUNT);
@@ -152,6 +150,44 @@ public class DataHubConfig implements Serializable {
     return config;
   }
 
+  public ConsumerConfig buildConsumerConfig() {
+    String endpoint = prop.getProperty(ENDPOINT);
+    if (Strings.isNullOrEmpty(endpoint)) {
+      throw new ConfigException("Endpoint can not be null.");
+    }
+
+    String accessId = prop.getProperty(ACCESS_ID);
+    if (Strings.isNullOrEmpty(accessId)) {
+      throw new ConfigException("AccessId can not be null.");
+    }
+
+    String accessKey = prop.getProperty(ACCESS_KEY);
+    if (Strings.isNullOrEmpty(accessKey)) {
+      throw new ConfigException("AccessKey can not be null.");
+    }
+
+    return new ConsumerConfig(endpoint, accessId, accessKey);
+  }
+
+  public ProducerConfig buildProducerConfig(){
+    String endpoint = prop.getProperty(ENDPOINT);
+    if (Strings.isNullOrEmpty(endpoint)) {
+      throw new ConfigException("Endpoint can not be null.");
+    }
+
+    String accessId = prop.getProperty(ACCESS_ID);
+    if (Strings.isNullOrEmpty(accessId)) {
+      throw new ConfigException("AccessId can not be null.");
+    }
+
+    String accessKey = prop.getProperty(ACCESS_KEY);
+    if (Strings.isNullOrEmpty(accessKey)) {
+      throw new ConfigException("AccessKey can not be null.");
+    }
+
+    return new ProducerConfig(endpoint, accessId, accessKey);
+  }
+
   public String getDefaultProject() {
     return defaultProject;
   }
@@ -177,6 +213,9 @@ public class DataHubConfig implements Serializable {
   }
 
   public String getSourceTopic() {
+    if (sourceTopic == null) {
+      throw new ConfigException("Source topic can not be null.");
+    }
     return sourceTopic;
   }
 
@@ -185,10 +224,24 @@ public class DataHubConfig implements Serializable {
   }
 
   public String getSinkTopic() {
+    if (sinkTopic == null) {
+      throw new ConfigException("Sink topic can not be null.");
+    }
     return sinkTopic;
   }
 
   public void setSinkTopic(String sinkTopic) {
     this.sinkTopic = sinkTopic;
+  }
+
+  public String getSubId() {
+    if (subId == null) {
+      throw new ConfigException("SubId can not be null.");
+    }
+    return subId;
+  }
+
+  public void setSubId(String subId) {
+    this.subId = subId;
   }
 }
