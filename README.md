@@ -8,11 +8,13 @@ Author: Charley Wu
 
 E-Mail: charleywu@aliyun.com
 
+Blog: www.charleywu.com
+
 ## 简介
 
-我们在阿里云上使用DataHub作为Flink程序输入输出的消息队列，DataHub再成本方面有着比较大的优势，但由于是阿里云的云产品，周边生态开放性做的不是很好，Flink Stream的Connector并没有开源出来。因此本人参照RocketMQ Flink Connector写了DataHub的Flink Connector。
+我们在阿里云上使用DataHub作为Flink程序输入输出的消息队列，使用成本比较低，但由于是阿里云的云产品，周边生态做的不是很好，Flink Stream的Connector并没有开源出来。因此本人参照RocketMQ Flink Connector写了DataHub的Flink Connector。
 
-DataHub主要提供连个SDK，`aliyun-sdk-datahub`和`datahub-client-library`；前者是较为基础的SDK，提供了丰富的DataHub操作接口，但使用上较为复杂，需要对DataHub有较为深入的了解；后者只在前者的基础上进行了封装，提供Consumer级和Producer进行协同消费级生产。本SDK使用的是后者。
+DataHub主要提供两个SDK，`aliyun-sdk-datahub`和`datahub-client-library`；前者是较为基础的SDK，提供了丰富的DataHub操作接口，使用较为复杂，需要对DataHub有较为深入的了解；后者在前者的基础上进行了封装，提供Consumer和Producer进行协同消费及生产。本SDK使用的是后者。
 
 ## 依赖介绍
 
@@ -164,7 +166,7 @@ https://github.com/CharleyWuCL/datahub-flink-connector/tree/master/src/test/java
 
 ### 注解
 
-将DataHub Topic进行实体化，提供两个注解定义Topic及Column。
+将DataHub Topic进行实体化，提供两个注解定义Topic及Field。
 
 #### @DataHubTopic
 
