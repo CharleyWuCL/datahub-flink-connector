@@ -4,7 +4,7 @@
 
 GitHub：https://github.com/CharleyWuCL/datahub-flink-connector
 
-Author: CharleyWu
+Author: Charley Wu
 
 E-Mail: charleywu@aliyun.com
 
