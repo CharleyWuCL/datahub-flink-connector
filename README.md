@@ -8,6 +8,8 @@ Author: Charley Wu
 
 E-Mail: charleywu@aliyun.com
 
+Blog: www.charleywu.com
+
 ## 简介
 
 我们在阿里云上使用DataHub作为Flink程序输入输出的消息队列，使用成本比较低，但由于是阿里云的云产品，周边生态做的不是很好，Flink Stream的Connector并没有开源出来。因此本人参照RocketMQ Flink Connector写了DataHub的Flink Connector。
