@@ -19,6 +19,14 @@ public class TopicCreator extends BaseHelper {
     super(accessId, accessKey);
   }
 
+  /**
+   *
+   * @param project
+   * @param topicClass
+   * @param needEventTime
+   * @param <T>
+   * @throws Exception
+   */
   public <T> void createTopic(String project, Class<T> topicClass, boolean needEventTime)
       throws Exception {
     Tuple3<String, Integer, String> topicInfo = TopicHelper.getTopicInfo(topicClass);
