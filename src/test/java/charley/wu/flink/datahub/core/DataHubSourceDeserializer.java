@@ -17,5 +17,10 @@ public class DataHubSourceDeserializer implements Deserializer<Input> {
   public TypeInformation<Input> getProducedType() {
     return TypeInformation.of(Input.class);
   }
+
+  @Override
+  public Class<Input> getType() {
+    return Input.class;
+  }
 }
 

@@ -28,6 +28,8 @@ import org.apache.flink.api.java.typeutils.ResultTypeQueryable;
 
 public interface Deserializer<T> extends ResultTypeQueryable<T>, Serializable {
 
+  Class<T> getType();
+
   default Map<String, String> deserializeKeys(RecordEntry record){
     return null;
   }
@@ -44,7 +46,7 @@ public interface Deserializer<T> extends ResultTypeQueryable<T>, Serializable {
         Object value = data.getField(key);
         kvMap.put(key, value);
       });
-      return JsonUtil.toObject(kvMap, getProducedType().getTypeClass());
+      return JsonUtil.toObject(kvMap, getType());
     } catch (Exception e) {
       throw new RuntimeException("Deserialize object error.", e);
     }
